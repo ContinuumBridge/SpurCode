@@ -1,0 +1,13 @@
+*.csv
+*.swp
+*.log
+*.launch
+*.ld
+*.o
+# C extensions
+*.so
+/Spur/TrueSTUDIO/*
+/Spur/TrueSTUDIO/.*
+# Vim temporary files
+*.swp
+*.swo
