@@ -59,7 +59,7 @@
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 //#define CB_DEMO_0
-#define VERSION					9
+#define VERSION					11
 #define FONT_2 					Arial_Narrow14x20
 //#define FONT_2 					Arial_Unicode_MS17x20
 #define FONT_3 					Arial_Narrow18x26
@@ -145,6 +145,7 @@
 #define S_XS					10
 #define S_W						11
 #define S_WS					12
+#define S_W2					13
 
 #define MODE				  	OPERATIONAL
 #define EEPROM_START			0x8080000
@@ -201,6 +202,7 @@ uint16_t			loop_catcher			= 0;
 uint32_t 			auto_reset;
 uint32_t 			new_button				= 0;
 uint8_t				prepare_reset 			= 0;
+uint16_t			watchdog_count			= 0;
 
 typedef enum {initial, normal, pressed, search, search_failed, reverting, demo} NodeState;
 NodeState         node_state           = initial;
@@ -359,7 +361,12 @@ int main(void)
 		  DEBUG_TX("*** Main ***\r\n\0");
 	  }
 	  if(current_state < 16)
+	  {
+		  watchdog_count++;
+		  if(watchdog_count > 500)
+			  NVIC_SystemReset();
 		  RTC_Delay(60);  // A fail-safe for "user" states
+	  }
 	  if(auto_reset)
 	  {
 		  DEBUG_TX("Starting after auto reset\r\n\0");
@@ -374,6 +381,7 @@ int main(void)
 			  HAL_NVIC_DisableIRQ(EXTI3_IRQn);
 			  HAL_NVIC_DisableIRQ(EXTI15_10_IRQn);
 			  loop_catcher = 0;
+			  watchdog_count = 0;
 			  button_irq = 0;
 			  Delay_ms(20);
 			  button_state = HAL_GPIO_ReadPin(GPIOA, pressed_button);
@@ -391,6 +399,7 @@ int main(void)
 	  {
 		  rtc_irq = 0;
 		  loop_catcher = 0;
+		  watchdog_count = 0;
 		  DEBUG_TX("RTC IRQ\r\n\0");
 		  On_RTC_IRQ();
 	  }
@@ -1103,8 +1112,18 @@ void On_NewState(uint8_t enable_send)
 	}
 	if(states[current_state][S_W] != 0xFF)  // Wait in this state for a fixed time
 	{
-		DEBUG_TX("On_NewState delay\r\n\0");
-		RTC_Delay((states[current_state][S_W] << 1));  // SR as delay is double the value
+		int delay = 0;
+		if(states[current_state][S_W2] == 0xFF)
+		{
+			delay = states[current_state][S_W] << 1;
+		}
+		else
+		{
+			delay = (states[current_state][S_W2] << 9) | ((states[current_state][S_W] << 1) & 0xFF);
+		}
+		sprintf(debug_buff, "On_NewState, delay: %d\r\n", delay);
+		DEBUG_TX(debug_buff);
+		RTC_Delay(delay);
 	}
 }
 
@@ -1799,6 +1818,7 @@ int Read_Battery(uint8_t send)
 			alert[1] = adc2volts;
 			Radio_On(1);
 			alert[2] = Get_RSSI();
+			alert[2] = Get_RSSI();
 			alert[3] = Get_Temperature();
 			Radio_Off();
 			sprintf(debug_buff, "Sending alert: %x %x %x %x\r\n", alert[0], alert[1], alert[2], alert[3]);
@@ -2105,7 +2125,7 @@ void Initialise_States(void)
 	static const uint8_t init[16] = {19,  19, 255,  20, 255, 255,  20, 255,  20, 255, 255, 255, 255}; // Push to Connect
 	static const uint8_t conn[16] = {20,  20, 255, 255, 255, 255, 255, 255, 255,   2,  21, 255, 255}; // Connecting
 	static const uint8_t conf[16] = {21,  21, 255,  19,  19,  19,  19,  19,  19,  13,   0, 255, 255}; // Configuring
-	static const uint8_t strt[16] = {22,  22, 255,   0, 255, 255,   0, 255,   0,  13,   0, 255, 255}; // Double-push to start
+	static const uint8_t strt[16] = {22,  22, 255,   0, 255, 255,   0, 255,   0,  13,   0, 254,   0}; // Double-push to start
 	static const uint8_t prob[16] = {23,  23, 255, 255, 255, 255, 255, 255, 255,  255,  0, 255, 255}; // Comms Problem
 	static const uint8_t ngnt[16] = {24,  24, 255,  20,  20,  20,  20,  20,  20, 255, 255, 255, 255}; // include_not
 	memcpy(states[STATE_NORMAL], tsti, sizeof(norm));
